@@ -23,7 +23,9 @@ class Game {
     constructor() {
         initLocalization();
         this.isPlaying = false;
+        this.isPaused = false;
         this.isGameOver = false;
+        this.shouldLockPointer = false;
         
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color(0x050505);
@@ -66,16 +68,49 @@ class Game {
     }
 
     setupInput() {
+        // 监听指针锁定变化，处理非程序触发的退出（如 Alt-Tab 或 ESC）
+        document.addEventListener('pointerlockchange', () => {
+            if (document.pointerLockElement === null) {
+                if (this.isPlaying && !this.isPaused) {
+                    this.togglePauseMenu();
+                }
+            }
+        });
+
+        // 检查并尝试恢复指针锁定
+        const checkLock = (e) => {
+            // 如果事件目标是菜单相关的 UI 元素，则不尝试锁定
+            if (e && e.target) {
+                const target = e.target;
+                if (target.closest('#menu') || 
+                    target.closest('#pause-menu') || 
+                    target.closest('#game-over') || 
+                    target.closest('#game-win')) {
+                    return;
+                }
+            }
+
+            if (this.shouldLockPointer && !document.pointerLockElement) {
+                document.body.requestPointerLock();
+            }
+        };
+        document.addEventListener('click', checkLock);
+
         document.addEventListener('keydown', e => {
             this.player.handleInput(e, true);
             if (e.code === 'KeyM') {
                 const map = document.getElementById('minimap');
                 if(map) map.classList.toggle('large');
             }
+            // ESC 键处理：仅在暂停时用于恢复游戏
+            // 游戏中按 ESC 会触发 pointerlockchange 从而暂停
+            // 注意：用户要求去掉“再按一下菜单隐藏菜单”的逻辑，所以这里不再处理 ESC 恢复游戏
+            // 仅保留 ESC 默认行为（退出指针锁定 -> 触发暂停）
         });
         document.addEventListener('keyup', e => this.player.handleInput(e, false));
         document.addEventListener('mousemove', e => {
-            if (this.isPlaying) this.player.handleMouseMove(e);
+            checkLock(e);
+            if (this.isPlaying && !this.isPaused) this.player.handleMouseMove(e);
         });
 
         const btn = document.getElementById('btn-start');
@@ -99,6 +134,46 @@ class Game {
                 }
 
                 this.isPlaying = true;
+                this.shouldLockPointer = true;
+                this.syncMouseSensitivityToSliders();
+            });
+        }
+
+        // 暂停菜单按钮事件
+        const resumeBtn = document.getElementById('btn-resume');
+        if (resumeBtn) {
+            resumeBtn.addEventListener('click', () => {
+                this.togglePauseMenu();
+            });
+        }
+
+        const restartBtn = document.getElementById('btn-restart');
+        if (restartBtn) {
+            restartBtn.addEventListener('click', () => {
+                location.reload();
+            });
+        }
+
+        // 主菜单和暂停菜单的鼠标速度滑块
+        const mainSpeedSlider = document.getElementById('mouse-speed-slider');
+        if (mainSpeedSlider) {
+            mainSpeedSlider.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                document.getElementById('mouse-speed-display').textContent = value.toFixed(1) + 'x';
+                if (this.player) {
+                    this.player.setMouseSensitivity(value);
+                }
+            });
+        }
+
+        const pauseSpeedSlider = document.getElementById('pause-mouse-speed-slider');
+        if (pauseSpeedSlider) {
+            pauseSpeedSlider.addEventListener('input', (e) => {
+                const value = parseFloat(e.target.value);
+                document.getElementById('pause-mouse-speed-display').textContent = value.toFixed(1) + 'x';
+                if (this.player) {
+                    this.player.setMouseSensitivity(value);
+                }
             });
         }
 
@@ -109,10 +184,39 @@ class Game {
         });
     }
 
+    togglePauseMenu() {
+        this.isPaused = !this.isPaused;
+        const pauseMenu = document.getElementById('pause-menu');
+        
+        if (this.isPaused) {
+            pauseMenu.classList.remove('hidden');
+            document.exitPointerLock();
+            this.shouldLockPointer = false;
+            this.syncMouseSensitivityToSliders();
+        } else {
+            pauseMenu.classList.add('hidden');
+            document.body.requestPointerLock();
+            this.shouldLockPointer = true;
+        }
+    }
+
+    syncMouseSensitivityToSliders() {
+        const sensitivity = this.player.mouseSensitivity;
+        const mainSlider = document.getElementById('mouse-speed-slider');
+        const pauseSlider = document.getElementById('pause-mouse-speed-slider');
+        const mainDisplay = document.getElementById('mouse-speed-display');
+        const pauseDisplay = document.getElementById('pause-mouse-speed-display');
+        
+        if (mainSlider) mainSlider.value = sensitivity;
+        if (pauseSlider) pauseSlider.value = sensitivity;
+        if (mainDisplay) mainDisplay.textContent = sensitivity.toFixed(1) + 'x';
+        if (pauseDisplay) pauseDisplay.textContent = sensitivity.toFixed(1) + 'x';
+    }
+
     animate() {
         requestAnimationFrame(this.animate);
         
-        if (!this.isPlaying) {
+        if (!this.isPlaying || this.isPaused) {
             this.renderer.render(this.scene, this.camera);
             return;
         }
@@ -123,6 +227,7 @@ class Game {
 
         if (this.player.hasWon) {
             this.isPlaying = false;
+            this.shouldLockPointer = false;
             document.exitPointerLock();
             document.getElementById('game-win').classList.remove('hidden');
         }
@@ -158,6 +263,7 @@ class Game {
         if (killed) {
             this.isPlaying = false;
             this.isGameOver = true;
+            this.shouldLockPointer = false;
             document.exitPointerLock();
             document.getElementById('game-over').classList.remove('hidden');
         }

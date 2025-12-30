@@ -20,6 +20,9 @@ export class Player {
         this.pitch = 0;
         this.yaw = 0;
         
+        // 鼠标转动速度系数，默认 1.0
+        this.mouseSensitivity = this.getMouseSensitivity();
+        
         // Camera Bobbing Parameters
         this.bobbingSpeed = 0.01;
         this.bobbingAmount = 0.02;
@@ -52,6 +55,16 @@ export class Player {
         }
     }
 
+    getMouseSensitivity() {
+        const saved = localStorage.getItem('mouseSensitivity');
+        return saved ? parseFloat(saved) : 1.0;
+    }
+
+    setMouseSensitivity(value) {
+        this.mouseSensitivity = value;
+        localStorage.setItem('mouseSensitivity', value);
+    }
+
     handleInput(e, isDown) {
         this.keys[e.code] = isDown;
         if (isDown) {
@@ -63,8 +76,8 @@ export class Player {
     handleMouseMove(e) {
         if (this.isHidden && this.hidingType !== 'cabinet') return;
 
-        this.yaw -= e.movementX * 0.002;
-        this.pitch -= e.movementY * 0.002;
+        this.yaw -= e.movementX * 0.002 * this.mouseSensitivity;
+        this.pitch -= e.movementY * 0.002 * this.mouseSensitivity;
         this.pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, this.pitch));
 
         if (this.isHidden && this.hidingType === 'cabinet') {
